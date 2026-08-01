@@ -97,7 +97,7 @@
   .addtag-form input{flex:1;min-width:140px}
   .addtag-form button{font:inherit;font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;border:1px solid var(--line);background:var(--panel2);color:var(--dim);padding:5px 10px;cursor:pointer;border-radius:0}
   .addtag-form button.go{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
-  .notes-edit{width:100%;min-height:36px;margin-top:8px;background:var(--panel2);border:1px solid var(--line);color:var(--dim);font:inherit;font-size:11.5px;padding:6px 8px;resize:vertical;border-radius:0}
+  .notes-edit{width:100%;min-height:36px;margin-top:8px;background:var(--panel2);border:1px solid var(--line);color:var(--dim);font:inherit;font-size:11.5px;padding:6px 8px;resize:vertical;border-radius:0;overflow-y:hidden}
   .notes-print{margin:8px 0 0;padding:0;list-style:none;display:none}
   .notes-print li{position:relative;padding-left:16px;color:var(--dim);font-size:11.5px;margin:3px 0}
   .notes-print li::before{content:"\25B8";position:absolute;left:0;color:var(--accent);font-size:9px;top:1px}
@@ -215,6 +215,12 @@ let syncFailed = false;
 
 function normKey(t){ return String(t).trim().toLowerCase().replace(/\s+/g,' '); }
 function escapeHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+
+function autoResizeTextarea(ta){
+  if(!ta) return;
+  ta.style.height = 'auto';
+  ta.style.height = ta.scrollHeight + 'px';
+}
 
 function sbHeaders(extra){
   return Object.assign({apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}`, 'Content-Type':'application/json'}, extra||{});
@@ -589,12 +595,16 @@ function render(){
   let ti=0;
   setlist.forEach(act=>act.songs.forEach(s=>{
     const entry = library[s.key] || {notes:[]};
-    if(textareas[ti]) textareas[ti].value = (entry.notes||[]).join('\n');
+    if(textareas[ti]){
+      textareas[ti].value = (entry.notes||[]).join('\n');
+      autoResizeTextarea(textareas[ti]);
+    }
     ti++;
   }));
 
   document.getElementById('considerationsBox').value = considerations;
   document.getElementById('considerationsPrint').textContent = considerations;
+  autoResizeTextarea(document.getElementById('considerationsBox'));
 }
 
 // ---- event delegation ----
@@ -649,6 +659,7 @@ document.getElementById('show').addEventListener('click', (e)=>{
 document.getElementById('show').addEventListener('input', (e)=>{
   const ta = e.target.closest('textarea.notes-edit');
   if(!ta) return;
+  autoResizeTextarea(ta);
   clearTimeout(ta._deb);
   ta._deb = setTimeout(()=>{
     const key = ta.dataset.key;
@@ -659,6 +670,7 @@ document.getElementById('show').addEventListener('input', (e)=>{
 });
 
 document.getElementById('considerationsBox').addEventListener('input', (e)=>{
+  autoResizeTextarea(e.target);
   considerations = e.target.value;
   document.getElementById('considerationsPrint').textContent = considerations;
   clearTimeout(window._coDeb);
