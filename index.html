@@ -8,6 +8,7 @@
     --flame:#FF574B;--pyro:#FF7ACF;--laser:#B6E82B;--atmos:#2CE8FF;--auto:#FFB000;--none:#7E9A88;
     --smoke-fg:#FFFFFF;--smoke-bd:#E6F5EC;--smoke-sq:#FFFFFF;
     --warnbg:#1C1608;--warnborder:#6B551F;--warntxt:#FFD873;--newbg:#0A1C12;--newborder:#2F6B45;--newtxt:#7CF2A8;
+    --playing-bg:rgba(61,255,143,.16);--playing-bd:#3DFF8F;--nextup-bg:rgba(255,176,0,.16);--nextup-bd:#FFB000;
     --fdisp:'Orbitron','Eurostile',ui-sans-serif,sans-serif;
     --fmono:'JetBrains Mono',ui-monospace,'SF Mono',Menlo,Consolas,monospace;
   }
@@ -18,6 +19,7 @@
     --flame:#C7362C;--pyro:#C71585;--laser:#5E9E00;--atmos:#0793B3;--auto:#A96D00;--none:#67816F;
     --smoke-fg:#5A6B60;--smoke-bd:#9FB3A6;--smoke-sq:#FFFFFF;
     --warnbg:#FCF3DC;--warnborder:#D9B23A;--warntxt:#5C4608;--newbg:#E9F5EC;--newborder:#8FC7A2;--newtxt:#0C4A25;
+    --playing-bg:rgba(12,138,74,.14);--playing-bd:#0C8A4A;--nextup-bg:rgba(169,109,0,.14);--nextup-bd:#A96D00;
   }
   *{box-sizing:border-box}html,body{background:var(--bg)}
   body{margin:0;color:var(--txt);font-family:var(--fmono);font-size:13px;line-height:1.5;padding:0 0 60px}
@@ -67,6 +69,7 @@
   .collapse-btn{background:none;border:none;color:var(--accent);font-family:var(--fdisp);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;cursor:pointer;padding:2px 6px}
   .collapse-btn:hover{text-decoration:underline}
   .note-strip.collapsed .considerations-edit,.note-strip.collapsed .considerations-print{display:none !important}
+  #ltcPanel.collapsed #ltcControls,#ltcPanel.collapsed .ltc-desc{display:none !important}
   .su-header-row{display:flex;align-items:center;gap:8px;margin:14px 0 -2px}
   .su-header-row .lbl{font-family:var(--fdisp);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)}
   .su-wrap.collapsed .su-panel{display:none !important}
@@ -83,12 +86,18 @@
   .cue{display:grid;grid-template-columns:66px 1fr;border:1px solid var(--line);border-top:none;background:var(--panel)}
   .act .cue:first-of-type{border-top:1px solid var(--line)}
   .cue.nofx{background:var(--panel2)}
+  .cue.playing{background:var(--playing-bg) !important;box-shadow:inset 3px 0 0 var(--playing-bd)}
+  .cue.next-up{background:var(--nextup-bg) !important;box-shadow:inset 3px 0 0 var(--nextup-bd)}
   .cue-id{display:flex;align-items:center;justify-content:center;background:var(--panel2);border-right:1px solid var(--line);
     color:var(--faint);font-size:11px;font-weight:500;letter-spacing:.08em;font-variant-numeric:tabular-nums}
   .cue-body{padding:10px 14px}
   .cue-title-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:7px}
   .cue-title{font-size:13px;font-weight:700;color:var(--txt);letter-spacing:.02em}
   .nofx .cue-title{color:var(--dim);font-weight:500}
+  .tc-edit{width:118px;font:inherit;font-family:var(--fmono);font-size:10.5px;letter-spacing:.04em;background:var(--panel2);border:1px dashed var(--line-bright);color:var(--dim);padding:2px 6px;border-radius:0}
+  .tc-print{display:none;font-family:var(--fmono);font-size:10.5px;letter-spacing:.04em;color:var(--faint)}
+  body.locked .tc-edit{display:none !important}
+  body.locked .tc-print{display:inline !important}
   .badge{font-family:var(--fmono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;padding:2px 7px;font-weight:700;display:inline-flex;align-items:center;gap:8px;border:1px solid currentColor}
   .badge-new{background:var(--newbg);color:var(--newtxt);border-color:var(--newborder)}
   .badge button{font:inherit;font-size:9px;letter-spacing:.1em;text-transform:uppercase;background:transparent;border:1px solid currentColor;color:inherit;padding:2px 6px;cursor:pointer}
@@ -156,6 +165,8 @@
     .notes-edit{display:none !important}.notes-print{display:block !important}
     .considerations-edit{display:none !important}.considerations-print{display:block !important}
     .version-edit{display:none !important}.version-print{display:inline !important}
+    .tc-edit{display:none !important}.tc-print{display:inline !important}
+    .cue.playing,.cue.next-up{background:none !important;box-shadow:none !important}
     .note-strip.collapsed .considerations-print{display:block !important}
     .su-wrap.collapsed .su-panel{display:block !important}
     .cue{break-inside:avoid}.act-head{break-after:avoid}
@@ -195,6 +206,31 @@
 </div>
 
 <div class="legend"><span class="li"><span class="swatch" style="background:var(--flame)"></span>Flame</span><span class="li"><span class="swatch" style="background:var(--pyro)"></span>Pyro / Concussion</span><span class="li"><span class="swatch" style="background:var(--laser)"></span>Laser</span><span class="li"><span class="swatch" style="background:var(--atmos)"></span>Cryo/CO2</span><span class="li"><span class="swatch" style="background:var(--smoke-sq);border:1px solid var(--smoke-bd)"></span>LSG · Haze · Smoke</span><span class="li"><span class="swatch" style="background:var(--auto)"></span>Automation</span><span class="li"><span class="swatch" style="background:var(--none)"></span>No FX</span></div>
+
+<div class="note-strip no-print" id="ltcPanel"><div class="panel-heading-row"><b>Timecode Sync (LTC / MTC)</b><button class="collapse-btn no-print" id="ltcCollapseBtn" type="button">Hide</button></div>
+  <div id="ltcControls" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:2px">
+    <select id="tcSourceSelect" style="font:inherit;font-size:11.5px;background:var(--panel2);color:var(--txt);border:1px solid var(--line);padding:4px 6px">
+      <option value="ltc" selected>LTC (Audio)</option>
+      <option value="mtc">MTC (MIDI)</option>
+    </select>
+    <select id="ltcDeviceSelect" style="font:inherit;font-size:11.5px;background:var(--panel2);color:var(--txt);border:1px solid var(--line);padding:4px 6px;max-width:220px">
+      <option value="">Default audio input</option>
+    </select>
+    <select id="mtcDeviceSelect" style="display:none;font:inherit;font-size:11.5px;background:var(--panel2);color:var(--txt);border:1px solid var(--line);padding:4px 6px;max-width:220px">
+      <option value="">No MIDI inputs found</option>
+    </select>
+    <select id="ltcFpsSelect" style="font:inherit;font-size:11.5px;background:var(--panel2);color:var(--txt);border:1px solid var(--line);padding:4px 6px">
+      <option value="24">24 fps</option>
+      <option value="25">25 fps</option>
+      <option value="30" selected>30 fps</option>
+      <option value="29.97">29.97 fps</option>
+    </select>
+    <button class="actionbtn primary" id="ltcStartBtn" type="button">Start Timecode Reader</button>
+    <button class="actionbtn" id="ltcStopBtn" type="button" style="display:none">Stop</button>
+    <span id="ltcStatus" style="font-family:var(--fmono);font-size:12px;color:var(--faint)">Not connected</span>
+  </div>
+  <div class="ltc-desc" style="font-size:10.5px;color:var(--faint);margin-top:6px" id="ltcDescText">Feed LTC audio into a mic/line input on this device. Set a timecode on each song below (HH:MM:SS:FF) — the currently playing song highlights green, the next one orange.</div>
+</div>
 
 <div class="note-strip" id="considerationsPanel"><div class="panel-heading-row"><b>Considerations</b><button class="collapse-btn no-print" id="considerationsCollapseBtn" type="button">Hide</button></div>
   <textarea id="considerationsBox" class="considerations-edit no-print no-edit" placeholder="General notes for the whole show — e.g. venue-specific restrictions, pyro sign-off status, weather calls..."></textarea>
@@ -617,7 +653,7 @@ function render(){
       return `<div class="cue ${isNone?'nofx':''}">
         <div class="cue-id">${id}</div>
         <div class="cue-body">
-          <div class="cue-title-row"><div class="cue-title">${escapeHtml(entry.title||s.title)}</div>${badge}</div>
+          <div class="cue-title-row"><div class="cue-title">${escapeHtml(entry.title||s.title)}</div>${badge}<input type="text" class="tc-edit" data-action="tc" data-key="${escapeHtml(s.key)}" value="${escapeHtml(entry.tc||'')}" placeholder="TC HH:MM:SS:FF"><span class="tc-print">${entry.tc?escapeHtml(entry.tc):''}</span></div>
           ${diffBanner}
           <div class="tags" data-songkey="${escapeHtml(s.key)}">${tagsHtml}<button class="addtag-btn no-print no-edit" data-action="show-addtag" data-key="${escapeHtml(s.key)}">+ FX</button></div>
           <div class="addtag-form no-print no-edit hidden" data-formkey="${escapeHtml(s.key)}">
@@ -704,15 +740,28 @@ document.getElementById('show').addEventListener('click', (e)=>{
 
 document.getElementById('show').addEventListener('input', (e)=>{
   const ta = e.target.closest('textarea.notes-edit');
-  if(!ta) return;
-  autoResizeTextarea(ta);
-  clearTimeout(ta._deb);
-  ta._deb = setTimeout(()=>{
-    const key = ta.dataset.key;
-    const entry = library[key]; if(!entry) return;
-    entry.notes = ta.value.split('\n').map(s=>s.trim()).filter(Boolean);
-    saveAll();
-  }, 500);
+  if(ta){
+    autoResizeTextarea(ta);
+    clearTimeout(ta._deb);
+    ta._deb = setTimeout(()=>{
+      const key = ta.dataset.key;
+      const entry = library[key]; if(!entry) return;
+      entry.notes = ta.value.split('\n').map(s=>s.trim()).filter(Boolean);
+      saveAll();
+    }, 500);
+    return;
+  }
+  const tcInput = e.target.closest('input.tc-edit');
+  if(tcInput){
+    clearTimeout(tcInput._deb);
+    tcInput._deb = setTimeout(()=>{
+      const key = tcInput.dataset.key;
+      const entry = library[key]; if(!entry) return;
+      entry.tc = tcInput.value.trim();
+      saveAll();
+      updateLtcHighlight();
+    }, 500);
+  }
 });
 
 document.getElementById('considerationsBox').addEventListener('input', (e)=>{
@@ -746,18 +795,25 @@ function setCollapsed(key, wrapEl, btn, collapsed){
   const considerationsBtn = document.getElementById('considerationsCollapseBtn');
   const suWrap = document.getElementById('suWrap');
   const suBtn = document.getElementById('suCollapseBtn');
+  const ltcPanel = document.getElementById('ltcPanel');
+  const ltcBtn = document.getElementById('ltcCollapseBtn');
 
-  let coCollapsed=false, suCollapsed=false;
+  let coCollapsed=false, suCollapsed=false, ltcCollapsed=false;
   try{ coCollapsed = localStorage.getItem('rb-considerations-collapsed')==='1'; }catch(e){}
   try{ suCollapsed = localStorage.getItem('rb-su-collapsed')==='1'; }catch(e){}
+  try{ ltcCollapsed = localStorage.getItem('rb-ltc-collapsed')==='1'; }catch(e){}
   setCollapsed('rb-considerations-collapsed', considerationsPanel, considerationsBtn, coCollapsed);
   setCollapsed('rb-su-collapsed', suWrap, suBtn, suCollapsed);
+  setCollapsed('rb-ltc-collapsed', ltcPanel, ltcBtn, ltcCollapsed);
 
   considerationsBtn.addEventListener('click', ()=>{
     setCollapsed('rb-considerations-collapsed', considerationsPanel, considerationsBtn, !considerationsPanel.classList.contains('collapsed'));
   });
   suBtn.addEventListener('click', ()=>{
     setCollapsed('rb-su-collapsed', suWrap, suBtn, !suWrap.classList.contains('collapsed'));
+  });
+  ltcBtn.addEventListener('click', ()=>{
+    setCollapsed('rb-ltc-collapsed', ltcPanel, ltcBtn, !ltcPanel.classList.contains('collapsed'));
   });
 })();
 
@@ -973,6 +1029,330 @@ document.getElementById('downloadHtmlBtn').addEventListener('click', ()=>{
     console.error('bake/download failed', e);
     alert("Couldn't build the download — please try again, or use Export/Print PDF instead.");
   }
+});
+
+// ==================== LTC (Linear Timecode) reader ====================
+// Decodes SMPTE 12M biphase-mark LTC from an audio input in the browser.
+// This is local to whichever device is physically fed the timecode signal —
+// it never syncs to Supabase, only the per-song TC stamps (typed by hand) do.
+// NOTE: bit-timing thresholds here follow the SMPTE 12M spec, but this has
+// not been validated against a real LTC generator — if it won't lock, the
+// most likely culprits are input gain (too hot/quiet) or a sample-rate edge
+// case; console.log the raw edge durations in ltcHandleEdge to diagnose.
+
+let ltcAudioCtx=null, ltcStream=null, ltcProc=null;
+let ltcFps=30;
+let ltcLastSign=1, ltcSamplesSinceEdge=0, ltcPendingHalf=false;
+let ltcBits=[];
+let ltcLocked=false, ltcDropFrame=false, ltcCurrentTC=null, ltcLastFrameAt=0;
+
+function ltcBitsToInt(bits, start, len){
+  let v=0;
+  for(let i=0;i<len;i++){ v |= (bits[start+i]?1:0) << i; }
+  return v;
+}
+
+function ltcDecodeFrame(bits){
+  const frameUnits = ltcBitsToInt(bits,0,4);
+  const frameTens = ltcBitsToInt(bits,4,2);
+  const dropFrame = bits[6];
+  const secUnits = ltcBitsToInt(bits,8,4);
+  const secTens = ltcBitsToInt(bits,12,3);
+  const minUnits = ltcBitsToInt(bits,16,4);
+  const minTens = ltcBitsToInt(bits,20,3);
+  const hourUnits = ltcBitsToInt(bits,24,4);
+  const hourTens = ltcBitsToInt(bits,28,2);
+  const frames = frameTens*10+frameUnits;
+  const secs = secTens*10+secUnits;
+  const mins = minTens*10+minUnits;
+  const hours = hourTens*10+hourUnits;
+  if(frames>39||secs>59||mins>59||hours>23) return; // reject garbage / not yet locked
+  ltcDropFrame = !!dropFrame;
+  ltcCurrentTC = {hours,mins,secs,frames};
+  ltcLocked = true;
+  ltcLastFrameAt = performance.now();
+  updateLtcStatusDisplay();
+}
+
+function ltcPushBit(b){
+  ltcBits.push(b);
+  if(ltcBits.length>200) ltcBits.shift();
+  if(ltcBits.length>=80){
+    let syncOk=true;
+    const sync=[0,0,1,1,1,1,1,1,1,1,1,1,1,1,0,1];
+    for(let i=0;i<16;i++){ if(ltcBits[ltcBits.length-16+i]!==sync[i]){ syncOk=false; break; } }
+    if(syncOk){
+      ltcDecodeFrame(ltcBits.slice(-80,-16));
+    }
+  }
+}
+
+function ltcHandleEdge(durSamples, bitPeriodSamples){
+  const shortMax = bitPeriodSamples*0.75;
+  if(durSamples < shortMax){
+    if(ltcPendingHalf){ ltcPushBit(1); ltcPendingHalf=false; }
+    else { ltcPendingHalf=true; }
+  } else {
+    ltcPendingHalf=false;
+    ltcPushBit(0);
+  }
+}
+
+function ltcProcessAudio(e){
+  const buf = e.inputBuffer.getChannelData(0);
+  const bitPeriod = ltcAudioCtx.sampleRate / (ltcFps*80);
+  for(let i=0;i<buf.length;i++){
+    const sign = buf[i]>=0 ? 1 : -1;
+    ltcSamplesSinceEdge++;
+    if(sign!==ltcLastSign){
+      ltcHandleEdge(ltcSamplesSinceEdge, bitPeriod);
+      ltcSamplesSinceEdge=0;
+      ltcLastSign=sign;
+    }
+  }
+}
+
+async function startLTC(deviceId){
+  try{
+    ltcStream = await navigator.mediaDevices.getUserMedia({
+      audio:{ deviceId: deviceId?{exact:deviceId}:undefined, echoCancellation:false, noiseSuppression:false, autoGainControl:false }
+    });
+  }catch(err){
+    alert('Could not access that audio input: '+err.message);
+    return false;
+  }
+  ltcAudioCtx = new (window.AudioContext||window.webkitAudioContext)();
+  const src = ltcAudioCtx.createMediaStreamSource(ltcStream);
+  ltcProc = ltcAudioCtx.createScriptProcessor(2048,1,1);
+  const mute = ltcAudioCtx.createGain();
+  mute.gain.value = 0;
+  ltcBits=[]; ltcPendingHalf=false; ltcLastSign=1; ltcSamplesSinceEdge=0; ltcLocked=false;
+  ltcProc.onaudioprocess = ltcProcessAudio;
+  src.connect(ltcProc);
+  ltcProc.connect(mute);
+  mute.connect(ltcAudioCtx.destination);
+  tcConnected = true;
+  updateLtcStatusDisplay();
+  return true;
+}
+
+function stopLTC(){
+  if(ltcStream){ ltcStream.getTracks().forEach(t=>t.stop()); ltcStream=null; }
+  if(ltcProc){ ltcProc.disconnect(); ltcProc.onaudioprocess=null; ltcProc=null; }
+  if(ltcAudioCtx){ ltcAudioCtx.close(); ltcAudioCtx=null; }
+  ltcLocked=false;
+  tcConnected=false;
+  updateLtcStatusDisplay();
+  document.querySelectorAll('.cue').forEach(el=>el.classList.remove('playing','next-up'));
+}
+
+let tcConnected=false;
+
+function updateLtcStatusDisplay(){
+  const el = document.getElementById('ltcStatus');
+  if(!el) return;
+  if(!tcConnected){ el.textContent='Not connected'; el.style.color='var(--faint)'; return; }
+  if(ltcLocked && ltcCurrentTC){
+    const p=(n)=>String(n).padStart(2,'0');
+    el.textContent = `${p(ltcCurrentTC.hours)}:${p(ltcCurrentTC.mins)}:${p(ltcCurrentTC.secs)}:${p(ltcCurrentTC.frames)}${ltcDropFrame?' DF':''}`;
+    el.style.color='var(--accent)';
+  } else {
+    el.textContent = currentTcSource()==='mtc' ? 'Searching for MTC…' : 'Searching for LTC…';
+    el.style.color='var(--warntxt)';
+  }
+}
+
+function tcToFrames(tcStr, fps){
+  const m = /^(\d{1,2}):(\d{1,2}):(\d{1,2})[:;](\d{1,2})$/.exec(String(tcStr||'').trim());
+  if(!m) return null;
+  const h=+m[1], mi=+m[2], s=+m[3], f=+m[4];
+  return Math.round(((h*3600+mi*60+s)*fps)+f);
+}
+
+function updateLtcHighlight(){
+  const rows = document.querySelectorAll('#show .cue');
+  rows.forEach(el=>el.classList.remove('playing','next-up'));
+  if(!ltcLocked || !ltcCurrentTC) return;
+  const curFrames = tcToFrames(`${ltcCurrentTC.hours}:${ltcCurrentTC.mins}:${ltcCurrentTC.secs}:${ltcCurrentTC.frames}`, ltcFps);
+  if(curFrames==null) return;
+
+  const flat = [];
+  setlist.forEach(act=>act.songs.forEach(s=>{
+    const entry = library[s.key];
+    flat.push(entry && entry.tc ? tcToFrames(entry.tc, ltcFps) : null);
+  }));
+
+  let currentIdx=-1;
+  for(let i=0;i<flat.length;i++){
+    if(flat[i]!=null && flat[i]<=curFrames) currentIdx=i;
+  }
+  if(currentIdx>=0 && rows[currentIdx]) rows[currentIdx].classList.add('playing');
+  if(rows[currentIdx+1]) rows[currentIdx+1].classList.add('next-up');
+}
+
+setInterval(()=>{
+  if(ltcLocked && performance.now()-ltcLastFrameAt>500){
+    ltcLocked=false;
+    updateLtcStatusDisplay();
+  }
+  updateLtcHighlight();
+}, 200);
+
+// ==================== MTC (MIDI Time Code) reader ====================
+// Decodes MIDI Time Code — quarter-frame messages (0xF1) during playback,
+// and full-frame SysEx messages (used on locate/park) — via the Web MIDI API.
+// Feeds the same shared ltcLocked/ltcCurrentTC/ltcFps state as the LTC path
+// above, so highlighting works identically regardless of source.
+// NOTE: like the LTC decoder, this follows the MIDI spec exactly but hasn't
+// been tested against real MTC hardware — if a rig's device ID or SysEx
+// framing differs, the full-frame branch may need small tweaks.
+
+let mtcAccess=null, mtcInput=null;
+let mtcQuarterBuf=new Array(8).fill(0), mtcQuarterGotMask=0;
+
+function mtcRateFromCode(code){
+  if(code===0) return {fps:24, df:false};
+  if(code===1) return {fps:25, df:false};
+  if(code===2) return {fps:29.97, df:true};
+  return {fps:30, df:false};
+}
+
+function mtcApplyDecodedTime(hours,mins,secs,frames,rateCode){
+  const rate = mtcRateFromCode(rateCode);
+  ltcFps = rate.fps;
+  ltcDropFrame = rate.df;
+  ltcCurrentTC = {hours,mins,secs,frames};
+  ltcLocked = true;
+  ltcLastFrameAt = performance.now();
+  const fpsSel = document.getElementById('ltcFpsSelect');
+  if(fpsSel) fpsSel.value = String(rate.fps);
+  updateLtcStatusDisplay();
+}
+
+function mtcApplyQuarterFrame(piece, nibble){
+  mtcQuarterBuf[piece] = nibble;
+  mtcQuarterGotMask |= (1<<piece);
+  if(mtcQuarterGotMask===0xFF){
+    const frames = ((mtcQuarterBuf[1]<<4)|mtcQuarterBuf[0]) & 0x1F;
+    const secs = ((mtcQuarterBuf[3]<<4)|mtcQuarterBuf[2]) & 0x3F;
+    const mins = ((mtcQuarterBuf[5]<<4)|mtcQuarterBuf[4]) & 0x3F;
+    const hourMSbit = mtcQuarterBuf[7] & 0x1;
+    const rateCode = (mtcQuarterBuf[7]>>1) & 0x3;
+    const hours = ((hourMSbit<<4)|mtcQuarterBuf[6]) & 0x1F;
+    mtcApplyDecodedTime(hours,mins,secs,frames,rateCode);
+    mtcQuarterGotMask = 0;
+  }
+}
+
+function mtcHandleMessage(data){
+  const status = data[0];
+  if(status===0xF1){
+    const b = data[1];
+    mtcApplyQuarterFrame((b>>4)&0x7, b&0xF);
+  } else if(status===0xF0 && data.length>=10 && data[1]===0x7F && data[3]===0x01 && data[4]===0x01){
+    // Full-frame SysEx: F0 7F <deviceID> 01 01 hh mm ss ff F7
+    const hh = data[5];
+    mtcApplyDecodedTime(hh&0x1F, data[6]&0x3F, data[7]&0x3F, data[8]&0x1F, (hh>>5)&0x3);
+  }
+}
+
+async function startMTC(inputId){
+  if(!navigator.requestMIDIAccess){
+    alert("This browser doesn't support Web MIDI (Chrome/Edge do). Use LTC (Audio) instead, or switch browsers.");
+    return false;
+  }
+  try{ mtcAccess = await navigator.requestMIDIAccess({sysex:true}); }
+  catch(err){
+    try{ mtcAccess = await navigator.requestMIDIAccess(); }
+    catch(err2){ alert('Could not access MIDI: '+err2.message); return false; }
+  }
+  const inputs = Array.from(mtcAccess.inputs.values());
+  mtcInput = inputId ? mtcAccess.inputs.get(inputId) : inputs[0];
+  if(!mtcInput){ alert('No MIDI input found — connect your MTC source and try again.'); return false; }
+  mtcQuarterGotMask = 0;
+  ltcLocked = false;
+  mtcInput.onmidimessage = (e)=> mtcHandleMessage(e.data);
+  tcConnected = true;
+  updateLtcStatusDisplay();
+  return true;
+}
+
+function stopMTC(){
+  if(mtcInput){ mtcInput.onmidimessage=null; mtcInput=null; }
+  mtcAccess=null;
+  ltcLocked=false;
+  tcConnected=false;
+  updateLtcStatusDisplay();
+  document.querySelectorAll('.cue').forEach(el=>el.classList.remove('playing','next-up'));
+}
+
+async function populateMidiDeviceList(){
+  const sel = document.getElementById('mtcDeviceSelect');
+  if(!navigator.requestMIDIAccess){ sel.innerHTML='<option value="">Web MIDI not supported in this browser</option>'; return; }
+  try{
+    const access = await navigator.requestMIDIAccess({sysex:true}).catch(()=>navigator.requestMIDIAccess());
+    const inputs = Array.from(access.inputs.values());
+    sel.innerHTML = inputs.length ? '' : '<option value="">No MIDI inputs found</option>';
+    inputs.forEach(inp=>{
+      const opt=document.createElement('option');
+      opt.value=inp.id; opt.textContent=inp.name||'MIDI Input';
+      sel.appendChild(opt);
+    });
+  }catch(err){ sel.innerHTML='<option value="">Could not access MIDI</option>'; }
+}
+
+// ---- source (LTC/MTC) toggle + shared start/stop wiring ----
+function currentTcSource(){
+  const r = document.getElementById('tcSourceSelect');
+  return r ? r.value : 'ltc';
+}
+
+document.getElementById('tcSourceSelect').addEventListener('change', ()=>{
+  const isLtc = currentTcSource()==='ltc';
+  document.getElementById('ltcDeviceSelect').style.display = isLtc ? '' : 'none';
+  document.getElementById('mtcDeviceSelect').style.display = isLtc ? 'none' : '';
+  document.getElementById('ltcFpsSelect').style.display = isLtc ? '' : 'none';
+  document.getElementById('ltcDescText').textContent = isLtc
+    ? 'Feed LTC audio into a mic/line input on this device. Set a timecode on each song below (HH:MM:SS:FF) — the currently playing song highlights green, the next one orange.'
+    : 'Connect an MTC source via a MIDI interface. Frame rate is read automatically from the incoming MTC stream. Set a timecode on each song below (HH:MM:SS:FF) — the currently playing song highlights green, the next one orange.';
+  if(!isLtc) populateMidiDeviceList();
+});
+
+document.getElementById('ltcFpsSelect').addEventListener('change', (e)=>{ ltcFps = parseFloat(e.target.value); });
+
+document.getElementById('ltcStartBtn').addEventListener('click', async ()=>{
+  const source = currentTcSource();
+  let ok = false;
+  if(source==='ltc'){
+    ok = await startLTC(document.getElementById('ltcDeviceSelect').value || undefined);
+    if(ok){
+      try{
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const sel = document.getElementById('ltcDeviceSelect');
+        const current = sel.value;
+        sel.innerHTML='';
+        devices.filter(d=>d.kind==='audioinput').forEach(d=>{
+          const opt=document.createElement('option');
+          opt.value=d.deviceId; opt.textContent=d.label||('Audio Input '+(sel.length+1));
+          sel.appendChild(opt);
+        });
+        if(current) sel.value = current;
+      }catch(err){ console.error('could not list audio devices', err); }
+    }
+  } else {
+    ok = await startMTC(document.getElementById('mtcDeviceSelect').value || undefined);
+  }
+  if(!ok) return;
+  document.getElementById('tcSourceSelect').disabled = true;
+  document.getElementById('ltcStartBtn').style.display='none';
+  document.getElementById('ltcStopBtn').style.display='';
+});
+
+document.getElementById('ltcStopBtn').addEventListener('click', ()=>{
+  if(currentTcSource()==='ltc') stopLTC(); else stopMTC();
+  document.getElementById('tcSourceSelect').disabled = false;
+  document.getElementById('ltcStartBtn').style.display='';
+  document.getElementById('ltcStopBtn').style.display='none';
 });
 
 // ---- theme ----
