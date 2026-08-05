@@ -83,7 +83,7 @@
   .act-head .mk{color:var(--accent);font-size:11px}
   .act-count{margin-left:auto;color:var(--faint);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase}
   /* cue rows */
-  .cue{display:grid;grid-template-columns:66px 1fr;border:1px solid var(--line);border-top:none;background:var(--panel)}
+  .cue{display:grid;grid-template-columns:66px 1fr;border:1px solid var(--line);border-top:none;background:var(--panel);scroll-margin-top:170px;scroll-margin-bottom:60px}
   .act .cue:first-of-type{border-top:1px solid var(--line)}
   .cue.nofx{background:var(--panel2)}
   .cue.playing{background:var(--playing-bg) !important;box-shadow:inset 3px 0 0 var(--playing-bd)}
@@ -228,6 +228,7 @@
     <button class="actionbtn primary" id="ltcStartBtn" type="button">Start Timecode Reader</button>
     <button class="actionbtn" id="ltcStopBtn" type="button" style="display:none">Stop</button>
     <span id="ltcStatus" style="font-family:var(--fmono);font-size:12px;color:var(--faint)">Not connected</span>
+    <label style="display:flex;gap:5px;align-items:center;font-size:11px;color:var(--dim);cursor:pointer"><input type="checkbox" id="ltcAutoScroll" checked> Auto-scroll to now/next</label>
   </div>
   <div class="ltc-desc" style="font-size:10.5px;color:var(--faint);margin-top:6px" id="ltcDescText">Feed LTC audio into a mic/line input on this device. Set a timecode on each song below (HH:MM:SS:FF) — the currently playing song highlights green, the next one orange.</div>
 </div>
@@ -1169,12 +1170,14 @@ function tcToFrames(tcStr, fps){
   return Math.round(((h*3600+mi*60+s)*fps)+f);
 }
 
+let ltcLastScrolledIdx=-1;
+
 function updateLtcHighlight(){
   const rows = document.querySelectorAll('#show .cue');
   rows.forEach(el=>el.classList.remove('playing','next-up'));
-  if(!ltcLocked || !ltcCurrentTC) return;
+  if(!ltcLocked || !ltcCurrentTC){ ltcLastScrolledIdx=-1; return; }
   const curFrames = tcToFrames(`${ltcCurrentTC.hours}:${ltcCurrentTC.mins}:${ltcCurrentTC.secs}:${ltcCurrentTC.frames}`, ltcFps);
-  if(curFrames==null) return;
+  if(curFrames==null){ ltcLastScrolledIdx=-1; return; }
 
   const flat = [];
   setlist.forEach(act=>act.songs.forEach(s=>{
@@ -1188,7 +1191,24 @@ function updateLtcHighlight(){
   }
   if(currentIdx>=0 && rows[currentIdx]) rows[currentIdx].classList.add('playing');
   if(rows[currentIdx+1]) rows[currentIdx+1].classList.add('next-up');
+
+  const autoScrollBox = document.getElementById('ltcAutoScroll');
+  if(currentIdx>=0 && currentIdx!==ltcLastScrolledIdx && autoScrollBox && autoScrollBox.checked && rows[currentIdx]){
+    ltcLastScrolledIdx = currentIdx;
+    rows[currentIdx].scrollIntoView({behavior:'smooth', block:'center'});
+  } else if(currentIdx<0){
+    ltcLastScrolledIdx = -1;
+  }
 }
+
+document.getElementById('ltcAutoScroll').addEventListener('change', (e)=>{
+  try{ localStorage.setItem('rb-ltc-autoscroll', e.target.checked ? '1' : '0'); }catch(err){}
+  if(e.target.checked) ltcLastScrolledIdx = -1; // force a re-scroll to current position next tick
+});
+try{
+  const savedAutoScroll = localStorage.getItem('rb-ltc-autoscroll');
+  if(savedAutoScroll==='0') document.getElementById('ltcAutoScroll').checked = false;
+}catch(err){}
 
 setInterval(()=>{
   if(ltcLocked && performance.now()-ltcLastFrameAt>500){
