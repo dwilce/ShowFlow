@@ -430,7 +430,11 @@ const FX_STOPWORDS = new Set(['FLAMES','FLAME','CONCUSSION','CONCUSSIONS','PYRO'
  'C','TIMECODE','TC']);
 
 function rawWords(str){
-  let s = String(str).toUpperCase().replace(/&/g,' AND ').replace(/[^A-Z0-9\s]/g,' ').replace(/\s+/g,' ').trim();
+  let s = String(str).toUpperCase()
+    .replace(/['\u2019\u2018\u00B4`]/g, '')  // strip apostrophes so contractions collapse: DON'T -> DONT (matches how library titles are already cleaned)
+    .replace(/&/g,' AND ')
+    .replace(/[^A-Z0-9\s]/g,' ')
+    .replace(/\s+/g,' ').trim();
   return s ? s.split(' ') : [];
 }
 function normWords(str){
