@@ -449,6 +449,22 @@ function buildTitleIndex(){
     .sort((a,b)=> b.words.length - a.words.length);
 }
 
+// Finds titleWords as a contiguous run anywhere inside lineWords — not just at
+// the start — so leading/trailing noise (track numbers, bullets, stray
+// characters that survived punctuation-stripping as their own token) doesn't
+// break an otherwise-clean match.
+function containsWordSequence(lineWords, titleWords){
+  if(titleWords.length===0 || titleWords.length>lineWords.length) return false;
+  for(let start=0; start<=lineWords.length-titleWords.length; start++){
+    let ok=true;
+    for(let i=0;i<titleWords.length;i++){
+      if(lineWords[start+i]!==titleWords[i]){ ok=false; break; }
+    }
+    if(ok) return true;
+  }
+  return false;
+}
+
 function findExistingAct(key){
   for(const act of setlist){ for(const s of act.songs){ if(s.key===key) return act.act; } }
   return null;
@@ -489,7 +505,7 @@ function parseOrderText(rawText){
     const words = normWords(line);
     let matched = null;
     for(const t of titleIndex){
-      if(t.words.length<=words.length && t.words.every((w,i)=>words[i]===w)){ matched = t; break; }
+      if(containsWordSequence(words, t.words)){ matched = t; break; }
     }
 
     if(matched){
@@ -810,14 +826,25 @@ document.getElementById('show').addEventListener('input', (e)=>{
   const tcInput = e.target.closest('input.tc-edit');
   if(tcInput){
     clearTimeout(tcInput._deb);
-    tcInput._deb = setTimeout(()=>{
-      const key = tcInput.dataset.key;
-      const entry = library[key]; if(!entry) return;
-      entry.tc = tcInput.value.trim();
-      saveAll();
-      updateLtcHighlight();
-    }, 500);
+    tcInput._deb = setTimeout(()=> commitTcInput(tcInput), 500);
   }
+});
+
+function commitTcInput(tcInput){
+  clearTimeout(tcInput._deb);
+  const key = tcInput.dataset.key;
+  const entry = library[key]; if(!entry) return;
+  entry.tc = tcInput.value.trim();
+  saveAll();
+  updateLtcHighlight();
+}
+
+// Commit immediately on blur too, so a value never sits uncommitted while the
+// person has already moved on — closes the gap where a poll/render could
+// otherwise land between typing and the debounced save.
+document.getElementById('show').addEventListener('focusout', (e)=>{
+  const tcInput = e.target.closest('input.tc-edit');
+  if(tcInput) commitTcInput(tcInput);
 });
 
 document.getElementById('considerationsBox').addEventListener('input', (e)=>{
@@ -1174,13 +1201,13 @@ function ltcProcessAudio(e){
   }
 }
 
-async function startLTC(deviceId){
+async function startLTC(deviceId, silent){
   try{
     ltcStream = await navigator.mediaDevices.getUserMedia({
       audio:{ deviceId: deviceId?{exact:deviceId}:undefined, echoCancellation:false, noiseSuppression:false, autoGainControl:false }
     });
   }catch(err){
-    alert('Could not access that audio input: '+err.message);
+    if(!silent) alert('Could not access that audio input: '+err.message);
     return false;
   }
   ltcAudioCtx = new (window.AudioContext||window.webkitAudioContext)();
@@ -1205,7 +1232,8 @@ function stopLTC(){
   ltcLocked=false;
   tcConnected=false;
   updateLtcStatusDisplay();
-  document.querySelectorAll('.cue').forEach(el=>el.classList.remove('playing','next-up'));
+  // Deliberately not clearing .playing/.next-up here — the last known
+  // now/next should stay visible until a new lock recomputes it.
 }
 
 let tcConnected=false;
@@ -1233,12 +1261,12 @@ function tcToFrames(tcStr, fps){
 
 let ltcLastScrolledIdx=-1;
 
+let ltcLastAppliedIdx=-1;
+
 function updateLtcHighlight(){
-  const rows = document.querySelectorAll('#show .cue');
-  rows.forEach(el=>el.classList.remove('playing','next-up'));
-  if(!ltcLocked || !ltcCurrentTC){ ltcLastScrolledIdx=-1; return; }
+  if(!ltcLocked || !ltcCurrentTC) return; // signal lost/stopped — leave the last highlight as it was
   const curFrames = tcToFrames(`${ltcCurrentTC.hours}:${ltcCurrentTC.mins}:${ltcCurrentTC.secs}:${ltcCurrentTC.frames}`, ltcFps);
-  if(curFrames==null){ ltcLastScrolledIdx=-1; return; }
+  if(curFrames==null) return; // shouldn't happen, but stay safe — leave as-is
 
   const flat = [];
   setlist.forEach(act=>act.songs.forEach(s=>{
@@ -1250,15 +1278,19 @@ function updateLtcHighlight(){
   for(let i=0;i<flat.length;i++){
     if(flat[i]!=null && flat[i]<=curFrames) currentIdx=i;
   }
-  if(currentIdx>=0 && rows[currentIdx]) rows[currentIdx].classList.add('playing');
+  if(currentIdx<0) return; // current position doesn't match any tagged track — leave last highlight as it was
+  if(currentIdx===ltcLastAppliedIdx) return; // no change, skip the DOM churn
+
+  const rows = document.querySelectorAll('#show .cue');
+  rows.forEach(el=>el.classList.remove('playing','next-up'));
+  if(rows[currentIdx]) rows[currentIdx].classList.add('playing');
   if(rows[currentIdx+1]) rows[currentIdx+1].classList.add('next-up');
+  ltcLastAppliedIdx = currentIdx;
 
   const autoScrollBox = document.getElementById('ltcAutoScroll');
-  if(currentIdx>=0 && currentIdx!==ltcLastScrolledIdx && autoScrollBox && autoScrollBox.checked && rows[currentIdx]){
+  if(currentIdx!==ltcLastScrolledIdx && autoScrollBox && autoScrollBox.checked && rows[currentIdx]){
     ltcLastScrolledIdx = currentIdx;
     rows[currentIdx].scrollIntoView({behavior:'smooth', block:'center'});
-  } else if(currentIdx<0){
-    ltcLastScrolledIdx = -1;
   }
 }
 
@@ -1337,19 +1369,19 @@ function mtcHandleMessage(data){
   }
 }
 
-async function startMTC(inputId){
+async function startMTC(inputId, silent){
   if(!navigator.requestMIDIAccess){
-    alert("This browser doesn't support Web MIDI (Chrome/Edge do). Use LTC (Audio) instead, or switch browsers.");
+    if(!silent) alert("This browser doesn't support Web MIDI (Chrome/Edge do). Use LTC (Audio) instead, or switch browsers.");
     return false;
   }
   try{ mtcAccess = await navigator.requestMIDIAccess({sysex:true}); }
   catch(err){
     try{ mtcAccess = await navigator.requestMIDIAccess(); }
-    catch(err2){ alert('Could not access MIDI: '+err2.message); return false; }
+    catch(err2){ if(!silent) alert('Could not access MIDI: '+err2.message); return false; }
   }
   const inputs = Array.from(mtcAccess.inputs.values());
   mtcInput = inputId ? mtcAccess.inputs.get(inputId) : inputs[0];
-  if(!mtcInput){ alert('No MIDI input found — connect your MTC source and try again.'); return false; }
+  if(!mtcInput){ if(!silent) alert('No MIDI input found — connect your MTC source and try again.'); return false; }
   mtcQuarterGotMask = 0;
   ltcLocked = false;
   mtcInput.onmidimessage = (e)=> mtcHandleMessage(e.data);
@@ -1364,7 +1396,7 @@ function stopMTC(){
   ltcLocked=false;
   tcConnected=false;
   updateLtcStatusDisplay();
-  document.querySelectorAll('.cue').forEach(el=>el.classList.remove('playing','next-up'));
+  // Deliberately not clearing .playing/.next-up here — see stopLTC().
 }
 
 async function populateMidiDeviceList(){
@@ -1388,6 +1420,26 @@ function currentTcSource(){
   return r ? r.value : 'ltc';
 }
 
+function saveTcPrefs(extra){
+  try{
+    const prefs = {
+      source: currentTcSource(),
+      ltcDevice: document.getElementById('ltcDeviceSelect').value || '',
+      mtcDevice: document.getElementById('mtcDeviceSelect').value || '',
+      fps: document.getElementById('ltcFpsSelect').value
+    };
+    Object.assign(prefs, extra||{});
+    localStorage.setItem('rb-tc-prefs', JSON.stringify(prefs));
+  }catch(e){}
+}
+
+function loadTcPrefs(){
+  try{
+    const raw = localStorage.getItem('rb-tc-prefs');
+    return raw ? JSON.parse(raw) : null;
+  }catch(e){ return null; }
+}
+
 document.getElementById('tcSourceSelect').addEventListener('change', ()=>{
   const isLtc = currentTcSource()==='ltc';
   document.getElementById('ltcDeviceSelect').style.display = isLtc ? '' : 'none';
@@ -1397,29 +1449,34 @@ document.getElementById('tcSourceSelect').addEventListener('change', ()=>{
     ? 'Feed LTC audio into a mic/line input on this device. Set a timecode on each song below (HH:MM:SS:FF) — the currently playing song highlights green, the next one orange.'
     : 'Connect an MTC source via a MIDI interface. Frame rate is read automatically from the incoming MTC stream. Set a timecode on each song below (HH:MM:SS:FF) — the currently playing song highlights green, the next one orange.';
   if(!isLtc) populateMidiDeviceList();
+  saveTcPrefs();
 });
 
-document.getElementById('ltcFpsSelect').addEventListener('change', (e)=>{ ltcFps = parseFloat(e.target.value); });
+document.getElementById('ltcFpsSelect').addEventListener('change', (e)=>{ ltcFps = parseFloat(e.target.value); saveTcPrefs(); });
+document.getElementById('ltcDeviceSelect').addEventListener('change', ()=> saveTcPrefs());
+document.getElementById('mtcDeviceSelect').addEventListener('change', ()=> saveTcPrefs());
+
+async function refreshLtcDeviceList(){
+  try{
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const sel = document.getElementById('ltcDeviceSelect');
+    const current = sel.value;
+    sel.innerHTML='';
+    devices.filter(d=>d.kind==='audioinput').forEach(d=>{
+      const opt=document.createElement('option');
+      opt.value=d.deviceId; opt.textContent=d.label||('Audio Input '+(sel.length+1));
+      sel.appendChild(opt);
+    });
+    if(current) sel.value = current;
+  }catch(err){ console.error('could not list audio devices', err); }
+}
 
 document.getElementById('ltcStartBtn').addEventListener('click', async ()=>{
   const source = currentTcSource();
   let ok = false;
   if(source==='ltc'){
     ok = await startLTC(document.getElementById('ltcDeviceSelect').value || undefined);
-    if(ok){
-      try{
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const sel = document.getElementById('ltcDeviceSelect');
-        const current = sel.value;
-        sel.innerHTML='';
-        devices.filter(d=>d.kind==='audioinput').forEach(d=>{
-          const opt=document.createElement('option');
-          opt.value=d.deviceId; opt.textContent=d.label||('Audio Input '+(sel.length+1));
-          sel.appendChild(opt);
-        });
-        if(current) sel.value = current;
-      }catch(err){ console.error('could not list audio devices', err); }
-    }
+    if(ok) await refreshLtcDeviceList();
   } else {
     ok = await startMTC(document.getElementById('mtcDeviceSelect').value || undefined);
   }
@@ -1427,6 +1484,7 @@ document.getElementById('ltcStartBtn').addEventListener('click', async ()=>{
   document.getElementById('tcSourceSelect').disabled = true;
   document.getElementById('ltcStartBtn').style.display='none';
   document.getElementById('ltcStopBtn').style.display='';
+  saveTcPrefs({running:true});
 });
 
 document.getElementById('ltcStopBtn').addEventListener('click', ()=>{
@@ -1434,7 +1492,49 @@ document.getElementById('ltcStopBtn').addEventListener('click', ()=>{
   document.getElementById('tcSourceSelect').disabled = false;
   document.getElementById('ltcStartBtn').style.display='';
   document.getElementById('ltcStopBtn').style.display='none';
+  saveTcPrefs({running:false});
 });
+
+// ---- restore last timecode source/device on load, and resume if it was running ----
+(async function restoreTcPrefs(){
+  const prefs = loadTcPrefs();
+  if(!prefs) return;
+
+  const sourceSel = document.getElementById('tcSourceSelect');
+  const fpsSel = document.getElementById('ltcFpsSelect');
+  if(prefs.source==='mtc' || prefs.source==='ltc') sourceSel.value = prefs.source;
+  if(prefs.fps){ fpsSel.value = prefs.fps; ltcFps = parseFloat(prefs.fps); }
+
+  const isLtc = sourceSel.value==='ltc';
+  document.getElementById('ltcDeviceSelect').style.display = isLtc ? '' : 'none';
+  document.getElementById('mtcDeviceSelect').style.display = isLtc ? 'none' : '';
+  document.getElementById('ltcFpsSelect').style.display = isLtc ? '' : 'none';
+  document.getElementById('ltcDescText').textContent = isLtc
+    ? 'Feed LTC audio into a mic/line input on this device. Set a timecode on each song below (HH:MM:SS:FF) — the currently playing song highlights green, the next one orange.'
+    : 'Connect an MTC source via a MIDI interface. Frame rate is read automatically from the incoming MTC stream. Set a timecode on each song below (HH:MM:SS:FF) — the currently playing song highlights green, the next one orange.';
+
+  if(!isLtc){
+    await populateMidiDeviceList();
+    if(prefs.mtcDevice) document.getElementById('mtcDeviceSelect').value = prefs.mtcDevice;
+  }
+
+  if(!prefs.running) return; // was stopped intentionally last session — don't auto-launch
+
+  const ok = isLtc
+    ? await startLTC(prefs.ltcDevice || undefined, true)
+    : await startMTC(prefs.mtcDevice || undefined, true);
+  if(ok){
+    if(isLtc){
+      await refreshLtcDeviceList();
+      if(prefs.ltcDevice) document.getElementById('ltcDeviceSelect').value = prefs.ltcDevice;
+    }
+    document.getElementById('tcSourceSelect').disabled = true;
+    document.getElementById('ltcStartBtn').style.display='none';
+    document.getElementById('ltcStopBtn').style.display='';
+  }
+  // if it fails silently (device unplugged, permission not persisted, etc.),
+  // the panel just sits in its normal "Not connected" state — no popup.
+})();
 
 // ---- header burger menu ----
 (function initHeaderMenu(){
