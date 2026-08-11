@@ -553,12 +553,14 @@ function renderOrderPreview(parsedActs){
 function applyOrderResult(parsedActs){
   let newCount=0, matchedCount=0;
   const newSetlist = [];
+  const keyOccurrences = {};
   parsedActs.forEach(a=>{
     const songs = [];
     a.slots.forEach(slot=>{
       if(slot.type==='song'){
         songs.push({title: library[slot.key].title, key: slot.key});
         matchedCount++;
+        keyOccurrences[slot.key] = (keyOccurrences[slot.key]||0) + 1;
       } else {
         const cb = document.querySelector(`[data-unmatched-check][data-id="${slot.id}"]`);
         if(cb && cb.checked){
@@ -580,7 +582,13 @@ function applyOrderResult(parsedActs){
   meta.locked = true;
   saveAll();
   render();
-  showImportStatus(`Reordered to match the new setlist. ${matchedCount} known songs placed, ${newCount} new song${newCount!==1?'s':''} added — assign FX to any new ones via "+ FX". Published as read-only — hit "Unlock (Edit)" if you need to make changes.`, false);
+  const dupeTitles = Object.keys(keyOccurrences)
+    .filter(k=>keyOccurrences[k]>1)
+    .map(k=>library[k] ? library[k].title : k);
+  const dupeWarning = dupeTitles.length
+    ? ` ⚠ ${dupeTitles.map(t=>`"${t}"`).join(', ')} matched more than once — check whether that's a real reprise or an extraction glitch and remove the extra if needed.`
+    : '';
+  showImportStatus(`Reordered to match the new setlist. ${matchedCount} known songs placed, ${newCount} new song${newCount!==1?'s':''} added — assign FX to any new ones via "+ FX".${dupeWarning} Published as read-only — hit "Unlock (Edit)" if you need to make changes.`, false);
   importPanel.classList.add('hidden');
 }
 
@@ -606,10 +614,20 @@ async function extractPdfText(arrayBuffer){
   let fullText='';
   for(let p=1;p<=pdf.numPages;p++){
     const page = await pdf.getPage(p);
+    const pageWidth = page.getViewport({scale:1}).width;
+    // These showflow PDFs are laid out in three horizontal bands: a rotated
+    // act/performer label hugging the left edge, the song-order column, and
+    // an FX/lighting-cue column starting further right. Only read the middle
+    // band — pulling in the FX column produces stray "Laser"/"Concussion"
+    // lines that don't belong to any song.
+    const leftMin = pageWidth * 0.08;
+    const leftMax = pageWidth * 0.60;
     const content = await page.getTextContent();
     let lastY=null, line='';
     for(const item of content.items){
+      const x = item.transform[4];
       const y = item.transform[5];
+      if(x < leftMin || x >= leftMax) continue; // skip sidebar label and FX column
       if(lastY!==null && Math.abs(y-lastY)>2){ fullText+=line+'\n'; line=''; }
       line += item.str + ' ';
       lastY = y;
@@ -1264,8 +1282,10 @@ function tcToFrames(tcStr, fps){
 }
 
 let ltcLastScrolledIdx=-1;
-
 let ltcLastAppliedIdx=-1;
+let ltcPendingIdx=-1;
+let ltcPendingCount=0;
+const LTC_STABILITY_TICKS=3; // must see the same track for 3 consecutive ~200ms ticks (~600ms) before it's trusted
 
 function updateLtcHighlight(){
   if(!ltcLocked || !ltcCurrentTC) return; // signal lost/stopped — leave the last highlight as it was
@@ -1282,14 +1302,27 @@ function updateLtcHighlight(){
   for(let i=0;i<flat.length;i++){
     if(flat[i]!=null && flat[i]<=curFrames) currentIdx=i;
   }
-  if(currentIdx<0) return; // current position doesn't match any tagged track — leave last highlight as it was
-  if(currentIdx===ltcLastAppliedIdx) return; // no change, skip the DOM churn
+  if(currentIdx<0){ ltcPendingIdx=-1; ltcPendingCount=0; return; } // current position doesn't match any tagged track — leave last highlight as it was, don't count as noise progress
+  if(currentIdx===ltcLastAppliedIdx){ ltcPendingIdx=-1; ltcPendingCount=0; return; } // already showing this track, nothing to do
+
+  // Noise buffer: a single bad frame decode can momentarily point at the wrong
+  // track. Require the same track to come back consistently before trusting
+  // it — a one-off glitch resets the count instead of flipping the highlight.
+  if(currentIdx===ltcPendingIdx){
+    ltcPendingCount++;
+  } else {
+    ltcPendingIdx = currentIdx;
+    ltcPendingCount = 1;
+  }
+  if(ltcPendingCount < LTC_STABILITY_TICKS) return; // not confirmed yet — treat as noise, leave last highlight as it was
 
   const rows = document.querySelectorAll('#show .cue');
   rows.forEach(el=>el.classList.remove('playing','next-up'));
   if(rows[currentIdx]) rows[currentIdx].classList.add('playing');
   if(rows[currentIdx+1]) rows[currentIdx+1].classList.add('next-up');
   ltcLastAppliedIdx = currentIdx;
+  ltcPendingIdx = -1;
+  ltcPendingCount = 0;
 
   const autoScrollBox = document.getElementById('ltcAutoScroll');
   if(currentIdx!==ltcLastScrolledIdx && autoScrollBox && autoScrollBox.checked && rows[currentIdx]){
