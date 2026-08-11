@@ -97,6 +97,15 @@
   .cue.nofx{background:var(--panel2)}
   .cue.playing{background:var(--playing-bg) !important;box-shadow:inset 3px 0 0 var(--playing-bd)}
   .cue.next-up{background:var(--nextup-bg) !important;box-shadow:inset 3px 0 0 var(--nextup-bd)}
+  .cue.cut-from-set{position:relative}
+  .cue.cut-from-set .cue-body{opacity:.4}
+  .cut-overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;z-index:6}
+  .cut-overlay span{font-family:var(--fdisp);font-weight:900;font-size:clamp(15px,3.4vw,26px);letter-spacing:.14em;text-transform:uppercase;
+    color:var(--red);background:rgba(0,0,0,.6);border:2px solid var(--red);padding:4px 16px;transform:rotate(-3deg)}
+  .cut-toggle-btn{background:none;border:1px solid var(--line-bright);color:var(--faint);font-family:var(--fmono);font-size:8.5px;
+    letter-spacing:.1em;text-transform:uppercase;cursor:pointer;padding:2px 7px;position:relative;z-index:7}
+  .cut-toggle-btn:hover{border-color:var(--red);color:var(--red)}
+  .cue.cut-from-set .cut-toggle-btn{border-color:var(--red);color:var(--red)}
   .cue-id{display:flex;align-items:center;justify-content:center;background:var(--panel2);border-right:1px solid var(--line);
     color:var(--faint);font-size:11px;font-weight:500;letter-spacing:.08em;font-variant-numeric:tabular-nums}
   .cue-body{padding:10px 14px}
@@ -744,10 +753,14 @@ function render(){
 
       const notesPrintList = (entry.notes&&entry.notes.length) ? `<ul class="notes-print">${entry.notes.map(n=>`<li>${escapeHtml(n)}</li>`).join('')}</ul>` : '';
 
-      return `<div class="cue ${isNone?'nofx':''}">
+      const cutOverlay = s.cut ? `<div class="cut-overlay"><span>Cut From Set</span></div>` : '';
+      const cutBtn = `<button type="button" class="cut-toggle-btn no-print no-edit" data-action="toggle-cut" data-key="${escapeHtml(s.key)}">${s.cut?'Restore':'Mark Cut'}</button>`;
+
+      return `<div class="cue ${isNone?'nofx':''} ${s.cut?'cut-from-set':''}">
+        ${cutOverlay}
         <div class="cue-id">${id}</div>
         <div class="cue-body">
-          <div class="cue-title-row"><div class="cue-title">${escapeHtml(entry.title||s.title)}</div>${badge}<input type="text" class="tc-edit" data-action="tc" data-key="${escapeHtml(s.key)}" value="${escapeHtml(entry.tc||'')}" placeholder="TC HH:MM:SS:FF"><span class="tc-print">${entry.tc?escapeHtml(entry.tc):''}</span></div>
+          <div class="cue-title-row"><div class="cue-title">${escapeHtml(entry.title||s.title)}</div>${badge}<input type="text" class="tc-edit" data-action="tc" data-key="${escapeHtml(s.key)}" value="${escapeHtml(entry.tc||'')}" placeholder="TC HH:MM:SS:FF"><span class="tc-print">${entry.tc?escapeHtml(entry.tc):''}</span>${cutBtn}</div>
           ${diffBanner}
           <div class="tags" data-songkey="${escapeHtml(s.key)}">${tagsHtml}<button class="addtag-btn no-print no-edit" data-action="show-addtag" data-key="${escapeHtml(s.key)}">+ FX</button></div>
           <div class="addtag-form no-print no-edit hidden" data-formkey="${escapeHtml(s.key)}">
@@ -828,6 +841,10 @@ document.getElementById('show').addEventListener('click', (e)=>{
   }
   else if(action==='keep-mine'){
     setlist.forEach(act=>act.songs.forEach(s=>{ if(s.key===key) delete s.incomingFx; }));
+    saveAll(); render();
+  }
+  else if(action==='toggle-cut'){
+    setlist.forEach(act=>act.songs.forEach(s=>{ if(s.key===key) s.cut = !s.cut; }));
     saveAll(); render();
   }
 });
@@ -1293,9 +1310,11 @@ function updateLtcHighlight(){
   if(curFrames==null) return; // shouldn't happen, but stay safe — leave as-is
 
   const flat = [];
+  const flatCut = [];
   setlist.forEach(act=>act.songs.forEach(s=>{
     const entry = library[s.key];
-    flat.push(entry && entry.tc ? tcToFrames(entry.tc, ltcFps) : null);
+    flat.push((entry && entry.tc && !s.cut) ? tcToFrames(entry.tc, ltcFps) : null);
+    flatCut.push(!!s.cut);
   }));
 
   let currentIdx=-1;
@@ -1319,7 +1338,11 @@ function updateLtcHighlight(){
   const rows = document.querySelectorAll('#show .cue');
   rows.forEach(el=>el.classList.remove('playing','next-up'));
   if(rows[currentIdx]) rows[currentIdx].classList.add('playing');
-  if(rows[currentIdx+1]) rows[currentIdx+1].classList.add('next-up');
+  let nextIdx = -1;
+  for(let i=currentIdx+1;i<flatCut.length;i++){
+    if(!flatCut[i]){ nextIdx=i; break; }
+  }
+  if(nextIdx>=0 && rows[nextIdx]) rows[nextIdx].classList.add('next-up');
   ltcLastAppliedIdx = currentIdx;
   ltcPendingIdx = -1;
   ltcPendingCount = 0;
