@@ -1323,10 +1323,12 @@ function updateLtcHighlight(){
 
   const anchored = ltcLastAppliedIdx>=0 && flat[ltcLastAppliedIdx]!=null;
   let candidateIdx=-1;
+  const REWIND_SLACK_FRAMES = ltcFps * 2; // ordinary decode jitter can dip a frame or two below the current stamp — only a real rewind (2+ seconds back) should trigger a full re-scan
 
-  if(!anchored || curFrames < flat[ltcLastAppliedIdx]){
-    // No anchor yet, or the timecode has moved before our current song's own
-    // start (a restart/rewind) — re-scan once to find the right starting point.
+  if(!anchored || (anchored && curFrames < flat[ltcLastAppliedIdx] - REWIND_SLACK_FRAMES)){
+    // No anchor yet, or the timecode has moved clearly before our current
+    // song's own start (a genuine restart/rewind) — re-scan once to find the
+    // right starting point.
     for(const i of playableIdxs){ if(flat[i]<=curFrames) candidateIdx=i; }
   } else {
     // Steady state: the setlist is always in order, so from here we only ever
