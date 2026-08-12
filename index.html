@@ -1317,40 +1317,57 @@ function updateLtcHighlight(){
     flatCut.push(!!s.cut);
   }));
 
-  let currentIdx=-1;
-  for(let i=0;i<flat.length;i++){
-    if(flat[i]!=null && flat[i]<=curFrames) currentIdx=i;
+  const playableIdxs = [];
+  for(let i=0;i<flat.length;i++){ if(flat[i]!=null) playableIdxs.push(i); }
+  if(playableIdxs.length===0){ ltcPendingIdx=-1; ltcPendingCount=0; return; } // nothing tagged, nothing to do
+
+  const anchored = ltcLastAppliedIdx>=0 && flat[ltcLastAppliedIdx]!=null;
+  let candidateIdx=-1;
+
+  if(!anchored || curFrames < flat[ltcLastAppliedIdx]){
+    // No anchor yet, or the timecode has moved before our current song's own
+    // start (a restart/rewind) — re-scan once to find the right starting point.
+    for(const i of playableIdxs){ if(flat[i]<=curFrames) candidateIdx=i; }
+  } else {
+    // Steady state: the setlist is always in order, so from here we only ever
+    // check the very next tagged track — never rescan the whole list. This is
+    // what stops one mis-stamped track elsewhere from yanking the highlight
+    // around: nothing but the immediate next track can ever be a candidate.
+    const pos = playableIdxs.indexOf(ltcLastAppliedIdx);
+    const nextTaggedIdx = (pos>=0 && pos+1<playableIdxs.length) ? playableIdxs[pos+1] : null;
+    candidateIdx = (nextTaggedIdx!=null && curFrames>=flat[nextTaggedIdx]) ? nextTaggedIdx : ltcLastAppliedIdx;
   }
-  if(currentIdx<0){ ltcPendingIdx=-1; ltcPendingCount=0; return; } // current position doesn't match any tagged track — leave last highlight as it was, don't count as noise progress
-  if(currentIdx===ltcLastAppliedIdx){ ltcPendingIdx=-1; ltcPendingCount=0; return; } // already showing this track, nothing to do
+
+  if(candidateIdx<0){ ltcPendingIdx=-1; ltcPendingCount=0; return; } // doesn't match any tagged track yet — leave last highlight as it was
+  if(candidateIdx===ltcLastAppliedIdx){ ltcPendingIdx=-1; ltcPendingCount=0; return; } // already showing this track, nothing to do
 
   // Noise buffer: a single bad frame decode can momentarily point at the wrong
   // track. Require the same track to come back consistently before trusting
   // it — a one-off glitch resets the count instead of flipping the highlight.
-  if(currentIdx===ltcPendingIdx){
+  if(candidateIdx===ltcPendingIdx){
     ltcPendingCount++;
   } else {
-    ltcPendingIdx = currentIdx;
+    ltcPendingIdx = candidateIdx;
     ltcPendingCount = 1;
   }
   if(ltcPendingCount < LTC_STABILITY_TICKS) return; // not confirmed yet — treat as noise, leave last highlight as it was
 
   const rows = document.querySelectorAll('#show .cue');
   rows.forEach(el=>el.classList.remove('playing','next-up'));
-  if(rows[currentIdx]) rows[currentIdx].classList.add('playing');
+  if(rows[candidateIdx]) rows[candidateIdx].classList.add('playing');
   let nextIdx = -1;
-  for(let i=currentIdx+1;i<flatCut.length;i++){
+  for(let i=candidateIdx+1;i<flatCut.length;i++){
     if(!flatCut[i]){ nextIdx=i; break; }
   }
   if(nextIdx>=0 && rows[nextIdx]) rows[nextIdx].classList.add('next-up');
-  ltcLastAppliedIdx = currentIdx;
+  ltcLastAppliedIdx = candidateIdx;
   ltcPendingIdx = -1;
   ltcPendingCount = 0;
 
   const autoScrollBox = document.getElementById('ltcAutoScroll');
-  if(currentIdx!==ltcLastScrolledIdx && autoScrollBox && autoScrollBox.checked && rows[currentIdx]){
-    ltcLastScrolledIdx = currentIdx;
-    rows[currentIdx].scrollIntoView({behavior:'smooth', block:'center'});
+  if(candidateIdx!==ltcLastScrolledIdx && autoScrollBox && autoScrollBox.checked && rows[candidateIdx]){
+    ltcLastScrolledIdx = candidateIdx;
+    rows[candidateIdx].scrollIntoView({behavior:'smooth', block:'center'});
   }
 }
 
