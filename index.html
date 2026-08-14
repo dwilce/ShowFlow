@@ -254,6 +254,7 @@
     <label style="display:flex;gap:5px;align-items:center;font-size:11px;color:var(--dim);cursor:pointer"><input type="checkbox" id="ltcAutoScroll" checked> Auto-scroll to now/next</label>
   </div>
   <div class="ltc-desc" style="font-size:10.5px;color:var(--faint);margin-top:6px" id="ltcDescText">Feed LTC audio into a mic/line input on this device. Set a timecode on each song below (HH:MM:SS:FF) — the currently playing song highlights green, the next one orange.</div>
+  <div id="ltcMatchReadout" class="no-print" style="font-family:var(--fmono);font-size:10.5px;color:var(--faint);margin-top:6px"></div>
 </div>
 
 <div class="note-strip" id="considerationsPanel"><div class="panel-heading-row"><b>Considerations</b><button class="collapse-btn no-print" id="considerationsCollapseBtn" type="button">Hide</button></div>
@@ -1271,6 +1272,7 @@ function stopLTC(){
   ltcLocked=false;
   tcConnected=false;
   updateLtcStatusDisplay();
+  setLtcReadout('Reader stopped — last match retained above.');
   // Deliberately not clearing .playing/.next-up here — the last known
   // now/next should stay visible until a new lock recomputes it.
 }
@@ -1304,44 +1306,66 @@ let ltcPendingIdx=-1;
 let ltcPendingCount=0;
 const LTC_STABILITY_TICKS=3; // must see the same track for 3 consecutive ~200ms ticks (~600ms) before it's trusted
 
+function setLtcReadout(text, isWarning){
+  const el = document.getElementById('ltcMatchReadout');
+  if(!el) return;
+  el.textContent = text;
+  el.style.color = isWarning ? 'var(--red)' : 'var(--faint)';
+}
+
 function updateLtcHighlight(){
-  if(!ltcLocked || !ltcCurrentTC) return; // signal lost/stopped — leave the last highlight as it was
+  if(!ltcLocked || !ltcCurrentTC){ setLtcReadout(''); return; } // signal lost/stopped — leave the last highlight as it was
   const curFrames = tcToFrames(`${ltcCurrentTC.hours}:${ltcCurrentTC.mins}:${ltcCurrentTC.secs}:${ltcCurrentTC.frames}`, ltcFps);
   if(curFrames==null) return; // shouldn't happen, but stay safe — leave as-is
 
   const flat = [];
   const flatCut = [];
+  const flatTitles = [];
   setlist.forEach(act=>act.songs.forEach(s=>{
     const entry = library[s.key];
     flat.push((entry && entry.tc && !s.cut) ? tcToFrames(entry.tc, ltcFps) : null);
     flatCut.push(!!s.cut);
+    flatTitles.push(entry ? entry.title : s.title);
   }));
 
-  const playableIdxs = [];
-  for(let i=0;i<flat.length;i++){ if(flat[i]!=null) playableIdxs.push(i); }
-  if(playableIdxs.length===0){ ltcPendingIdx=-1; ltcPendingCount=0; return; } // nothing tagged, nothing to do
-
-  const anchored = ltcLastAppliedIdx>=0 && flat[ltcLastAppliedIdx]!=null;
-  let candidateIdx=-1;
-  const REWIND_SLACK_FRAMES = ltcFps * 2; // ordinary decode jitter can dip a frame or two below the current stamp — only a real rewind (2+ seconds back) should trigger a full re-scan
-
-  if(!anchored || (anchored && curFrames < flat[ltcLastAppliedIdx] - REWIND_SLACK_FRAMES)){
-    // No anchor yet, or the timecode has moved clearly before our current
-    // song's own start (a genuine restart/rewind) — re-scan once to find the
-    // right starting point.
-    for(const i of playableIdxs){ if(flat[i]<=curFrames) candidateIdx=i; }
-  } else {
-    // Steady state: the setlist is always in order, so from here we only ever
-    // check the very next tagged track — never rescan the whole list. This is
-    // what stops one mis-stamped track elsewhere from yanking the highlight
-    // around: nothing but the immediate next track can ever be a candidate.
-    const pos = playableIdxs.indexOf(ltcLastAppliedIdx);
-    const nextTaggedIdx = (pos>=0 && pos+1<playableIdxs.length) ? playableIdxs[pos+1] : null;
-    candidateIdx = (nextTaggedIdx!=null && curFrames>=flat[nextTaggedIdx]) ? nextTaggedIdx : ltcLastAppliedIdx;
+  // Walk the list strictly in setlist order, advancing past every track whose
+  // own stamp has been reached, and stopping at the first one that hasn't.
+  // Each track's timecode is judged purely on its own terms — there's no
+  // assumption that stamps increase relative to each other, since a cue's
+  // timecode can be anything. This is what makes it order-safe: a track
+  // further down the list can never be picked before every track ahead of
+  // it (in list order) has actually had its own stamp reached.
+  let candidateIdx = -1;
+  let firstTaggedIdx = -1, firstTaggedTitle='';
+  let nextAfterCandidateIdx = -1;
+  for(let i=0;i<flat.length;i++){
+    if(flat[i]==null) continue; // untagged track — doesn't gate the sequence, just skip over it
+    if(firstTaggedIdx===-1){ firstTaggedIdx=i; firstTaggedTitle=flatTitles[i]; }
+    if(flat[i] <= curFrames){
+      candidateIdx = i;
+    } else {
+      nextAfterCandidateIdx = i;
+      break;
+    }
   }
 
-  if(candidateIdx<0){ ltcPendingIdx=-1; ltcPendingCount=0; return; } // doesn't match any tagged track yet — leave last highlight as it was
-  if(candidateIdx===ltcLastAppliedIdx){ ltcPendingIdx=-1; ltcPendingCount=0; return; } // already showing this track, nothing to do
+  if(candidateIdx<0){
+    ltcPendingIdx=-1; ltcPendingCount=0;
+    if(firstTaggedIdx>=0) setLtcReadout(`Waiting to reach the first stamped track: "${firstTaggedTitle}"`);
+    else setLtcReadout('No tracks have a timecode stamp yet.');
+    return; // hasn't reached any tagged track yet — leave last highlight as it was
+  }
+
+  if(candidateIdx===ltcLastAppliedIdx){
+    if(nextAfterCandidateIdx>=0){
+      const remainSec = Math.max(0, Math.round((flat[nextAfterCandidateIdx]-curFrames)/ltcFps));
+      setLtcReadout(`Matched: "${flatTitles[candidateIdx]}" — next up "${flatTitles[nextAfterCandidateIdx]}" in ~${remainSec}s`);
+    } else {
+      setLtcReadout(`Matched: "${flatTitles[candidateIdx]}" — last stamped track in the show`);
+    }
+    ltcPendingIdx=-1; ltcPendingCount=0;
+    return; // already showing this track, nothing to do
+  }
 
   // Noise buffer: a single bad frame decode can momentarily point at the wrong
   // track. Require the same track to come back consistently before trusting
@@ -1352,7 +1376,10 @@ function updateLtcHighlight(){
     ltcPendingIdx = candidateIdx;
     ltcPendingCount = 1;
   }
-  if(ltcPendingCount < LTC_STABILITY_TICKS) return; // not confirmed yet — treat as noise, leave last highlight as it was
+  if(ltcPendingCount < LTC_STABILITY_TICKS){
+    setLtcReadout(`Confirming "${flatTitles[candidateIdx]}"… (${ltcPendingCount}/${LTC_STABILITY_TICKS})`);
+    return; // not confirmed yet — treat as noise, leave last highlight as it was
+  }
 
   const rows = document.querySelectorAll('#show .cue');
   rows.forEach(el=>el.classList.remove('playing','next-up'));
@@ -1365,6 +1392,7 @@ function updateLtcHighlight(){
   ltcLastAppliedIdx = candidateIdx;
   ltcPendingIdx = -1;
   ltcPendingCount = 0;
+  setLtcReadout(`Matched: "${flatTitles[candidateIdx]}"`);
 
   const autoScrollBox = document.getElementById('ltcAutoScroll');
   if(candidateIdx!==ltcLastScrolledIdx && autoScrollBox && autoScrollBox.checked && rows[candidateIdx]){
@@ -1475,6 +1503,7 @@ function stopMTC(){
   ltcLocked=false;
   tcConnected=false;
   updateLtcStatusDisplay();
+  setLtcReadout('Reader stopped — last match retained above.');
   // Deliberately not clearing .playing/.next-up here — see stopLTC().
 }
 
