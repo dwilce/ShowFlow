@@ -503,6 +503,19 @@ function startPolling(){
   }, POLL_MS);
 }
 
+// Background tabs get their timers throttled by the browser (sometimes to
+// once a minute or less), so a tab you're not currently looking at can miss
+// heartbeats and show stale presence. Force an immediate refresh the moment
+// you actually switch to/focus this tab, so what you see is always current.
+function refreshPresenceNow(){
+  const active = document.activeElement;
+  const isEditing = active && (active.tagName==='TEXTAREA' || active.tagName==='INPUT');
+  sendPresenceHeartbeat(isEditing).catch(e=>console.error('presence heartbeat failed', e));
+  fetchPresence().catch(e=>console.error('presence fetch failed', e));
+}
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) refreshPresenceNow(); });
+window.addEventListener('focus', refreshPresenceNow);
+
 function bootstrapFromOriginal(){
   library = {};
   setlist = ORIGINAL_DATA.map(act=>({
