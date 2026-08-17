@@ -253,6 +253,7 @@
     <button class="actionbtn" id="ltcStopBtn" type="button" style="display:none">Stop</button>
     <span id="ltcStatus" style="font-family:var(--fmono);font-size:12px;color:var(--faint)">Not connected</span>
     <label style="display:flex;gap:5px;align-items:center;font-size:11px;color:var(--dim);cursor:pointer"><input type="checkbox" id="ltcAutoScroll" checked> Auto-scroll to now/next</label>
+    <button type="button" id="ltcResyncBtn" class="actionbtn no-print" title="Force an immediate re-match against the current live timecode — use this after editing a stamp mid-show">↻ Refresh to Current Track</button>
   </div>
   <div class="ltc-desc" style="font-size:10.5px;color:var(--faint);margin-top:6px" id="ltcDescText">Feed LTC audio into a mic/line input on this device. Set a timecode on each song below (HH:MM:SS:FF) — the currently playing song highlights green, the next one orange.</div>
   <div id="ltcMatchReadout" class="no-print" style="font-family:var(--fmono);font-size:10.5px;color:var(--faint);margin-top:6px"></div>
@@ -1292,6 +1293,25 @@ function ltcBitsToInt(bits, start, len){
   return v;
 }
 
+let ltcWasLocked = false;
+let ltcAutoResyncTimer = null;
+
+// Called from both the LTC and MTC decode paths whenever a frame is
+// successfully accepted. Detects the false->true transition (signal was
+// stopped/lost and has now resumed) and, 2 seconds after that happens,
+// automatically does what the "Refresh to Current Track" button does —
+// so nobody has to remember to hit it themselves after a reconnect.
+function markLtcLocked(){
+  if(!ltcWasLocked){
+    ltcWasLocked = true;
+    clearTimeout(ltcAutoResyncTimer);
+    ltcAutoResyncTimer = setTimeout(()=>{
+      if(ltcLocked) forceLtcResync(); // still locked 2s later — not just a brief flicker
+    }, 2000);
+  }
+  ltcLocked = true;
+}
+
 function ltcDecodeFrame(bits){
   const frameUnits = ltcBitsToInt(bits,0,4);
   const frameTens = ltcBitsToInt(bits,4,2);
@@ -1309,7 +1329,7 @@ function ltcDecodeFrame(bits){
   if(frames>39||secs>59||mins>59||hours>23) return; // reject garbage / not yet locked
   ltcDropFrame = !!dropFrame;
   ltcCurrentTC = {hours,mins,secs,frames};
-  ltcLocked = true;
+  markLtcLocked();
   ltcLastFrameAt = performance.now();
   updateLtcStatusDisplay();
 }
@@ -1375,7 +1395,7 @@ async function startLTC(deviceId, silent){
   ltcProc = ltcAudioCtx.createScriptProcessor(2048,1,1);
   const mute = ltcAudioCtx.createGain();
   mute.gain.value = 0;
-  ltcBits=[]; ltcPendingHalf=false; ltcLastSign=1; ltcSamplesSinceEdge=0; ltcLocked=false;
+  ltcBits=[]; ltcPendingHalf=false; ltcLastSign=1; ltcSamplesSinceEdge=0; ltcLocked=false; ltcWasLocked=false;
   ltcProc.onaudioprocess = ltcProcessAudio;
   src.connect(ltcProc);
   ltcProc.connect(mute);
@@ -1390,6 +1410,8 @@ function stopLTC(){
   if(ltcProc){ ltcProc.disconnect(); ltcProc.onaudioprocess=null; ltcProc=null; }
   if(ltcAudioCtx){ ltcAudioCtx.close(); ltcAudioCtx=null; }
   ltcLocked=false;
+  ltcWasLocked=false;
+  clearTimeout(ltcAutoResyncTimer);
   tcConnected=false;
   updateLtcStatusDisplay();
   setLtcReadout('Reader stopped — last match retained above.');
@@ -1521,6 +1543,61 @@ function updateLtcHighlight(){
   }
 }
 
+// Manual "force resync" — for after editing a timecode stamp mid-show, so
+// you don't have to wait out the normal noise-filtering confirmation delay.
+// A button click is inherently trusted, so this applies the match instantly.
+function forceLtcResync(){
+  if(!ltcLocked || !ltcCurrentTC){
+    setLtcReadout('No live timecode signal to resync to — make sure the reader is running.', true);
+    return;
+  }
+  const curFrames = tcToFrames(`${ltcCurrentTC.hours}:${ltcCurrentTC.mins}:${ltcCurrentTC.secs}:${ltcCurrentTC.frames}`, ltcFps);
+  if(curFrames==null) return;
+
+  const flat = [];
+  const flatCut = [];
+  const flatTitles = [];
+  setlist.forEach(act=>act.songs.forEach(s=>{
+    const entry = library[s.key];
+    flat.push((entry && entry.tc && !s.cut) ? tcToFrames(entry.tc, ltcFps) : null);
+    flatCut.push(!!s.cut);
+    flatTitles.push(entry ? entry.title : s.title);
+  }));
+
+  let candidateIdx = -1;
+  for(let i=0;i<flat.length;i++){
+    if(flat[i]==null) continue;
+    if(flat[i] <= curFrames){ candidateIdx = i; } else { break; }
+  }
+
+  if(candidateIdx<0){
+    setLtcReadout('No track matches the current timecode yet.', true);
+    return;
+  }
+
+  const rows = document.querySelectorAll('#show .cue');
+  rows.forEach(el=>el.classList.remove('playing','next-up'));
+  rows[candidateIdx].classList.add('playing');
+  let nextIdx = -1;
+  for(let i=candidateIdx+1;i<flatCut.length;i++){
+    if(!flatCut[i]){ nextIdx=i; break; }
+  }
+  if(nextIdx>=0 && rows[nextIdx]) rows[nextIdx].classList.add('next-up');
+
+  ltcLastAppliedIdx = candidateIdx;
+  ltcPendingIdx = -1;
+  ltcPendingCount = 0;
+  setLtcReadout(`Resynced: "${flatTitles[candidateIdx]}"`);
+
+  const autoScrollBox = document.getElementById('ltcAutoScroll');
+  if(autoScrollBox && autoScrollBox.checked){
+    ltcLastScrolledIdx = candidateIdx;
+    rows[candidateIdx].scrollIntoView({behavior:'smooth', block:'center'});
+  }
+}
+
+document.getElementById('ltcResyncBtn').addEventListener('click', forceLtcResync);
+
 document.getElementById('ltcAutoScroll').addEventListener('change', (e)=>{
   try{ localStorage.setItem('rb-ltc-autoscroll', e.target.checked ? '1' : '0'); }catch(err){}
   if(e.target.checked) ltcLastScrolledIdx = -1; // force a re-scroll to current position next tick
@@ -1533,6 +1610,7 @@ try{
 setInterval(()=>{
   if(ltcLocked && performance.now()-ltcLastFrameAt>500){
     ltcLocked=false;
+    ltcWasLocked=false;
     updateLtcStatusDisplay();
   }
   updateLtcHighlight();
@@ -1562,7 +1640,7 @@ function mtcApplyDecodedTime(hours,mins,secs,frames,rateCode){
   ltcFps = rate.fps;
   ltcDropFrame = rate.df;
   ltcCurrentTC = {hours,mins,secs,frames};
-  ltcLocked = true;
+  markLtcLocked();
   ltcLastFrameAt = performance.now();
   const fpsSel = document.getElementById('ltcFpsSelect');
   if(fpsSel) fpsSel.value = String(rate.fps);
@@ -1625,6 +1703,7 @@ async function startMTC(inputId, silent){
   if(!mtcInput){ if(!silent) alert('No MIDI input found — connect your MTC source and try again.'); return false; }
   mtcQuarterGotMask = 0;
   ltcLocked = false;
+  ltcWasLocked = false;
   mtcInput.onmidimessage = (e)=> mtcHandleMessage(e.data);
   tcConnected = true;
   updateLtcStatusDisplay();
@@ -1635,6 +1714,8 @@ function stopMTC(){
   if(mtcInput){ mtcInput.onmidimessage=null; mtcInput=null; }
   mtcAccess=null;
   ltcLocked=false;
+  ltcWasLocked=false;
+  clearTimeout(ltcAutoResyncTimer);
   tcConnected=false;
   updateLtcStatusDisplay();
   setLtcReadout('Reader stopped — last match retained above.');
