@@ -198,6 +198,7 @@
     <button class="actionbtn" id="menuBtn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="More options">&#9776; Menu</button>
     <div class="dropdown-menu hidden" id="dropdownMenu">
       <button class="toggle" id="themeBtn" type="button" aria-label="Toggle theme"></button>
+      <button class="toggle" id="changeNameBtn" type="button">Change Display Name</button>
       <button class="actionbtn primary" id="printBtn" type="button">Export / Print PDF</button>
       <button class="actionbtn primary" id="downloadHtmlBtn" type="button">Download HTML</button>
       <button class="actionbtn primary" id="lockBtn" type="button">Publish (Lock)</button>
@@ -1900,6 +1901,17 @@ btn.addEventListener('click', ()=>{
   const n = cur==='light' ? 'dark' : 'light';
   apply(n);
   try{ localStorage.setItem('rb-theme', n); }catch(e){}
+});
+
+// ---- change display name ----
+document.getElementById('changeNameBtn').addEventListener('click', ()=>{
+  let entered;
+  try{ entered = prompt("Name to show others while you're on this sheet? (Leave blank to stay anonymous)", getClientName()); }
+  catch(e){ return; }
+  if(entered===null) return; // cancelled — leave name unchanged
+  cachedClientName = entered.trim().slice(0,40);
+  try{ localStorage.setItem('rb-client-name', cachedClientName); }catch(e){}
+  refreshPresenceNow(); // push the new name immediately rather than waiting for the next poll
 });
 
 // ---- logo upload/reset ----
