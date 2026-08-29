@@ -1446,7 +1446,6 @@ let ltcLastAppliedIdx=-1;
 let ltcPendingIdx=-1;
 let ltcPendingCount=0;
 const LTC_STABILITY_TICKS=2; // require the same match twice in a row (~400ms) before trusting it, to ignore a single bad frame decode
-const LTC_LOOKAHEAD_SECONDS=90*60; // how far in the past a stamp can be and still count as "just reached" — generous for any real gap (a long DJ break), but far tighter than the many-hours gap to an unrelated timecode range (e.g. a video reel's own independent clock)
 
 // Shared by the tick handler and the manual resync button, so there's only
 // one place that decides "which track is this timecode."
@@ -1460,25 +1459,16 @@ function getFlatTcData(){
   return {flat, flatCut};
 }
 
-// Scans every tagged track and picks the LATEST one (in list order) whose
-// own stamp is within a plausible recent window of curFrames — not simply
-// "less than or equal to" with no upper bound. That upper bound is what
-// makes this safe to scan the whole list: a track whose stamp is a much
-// smaller number purely because it belongs to a different, unrelated
-// timecode range (a video's own independent clock, hours away in value)
-// fails its own window check and is correctly skipped, even though a plain
-// "<=" comparison would have wrongly treated it as already reached. It also
-// means an unreached interstitial earlier in the list can never block a
-// later, genuinely-reached track from being found — every candidate is
-// judged independently on its own terms, not by walking through in order.
-function findBoundedCurrentIdx(flat, curFrames){
-  let best=-1;
-  for(let i=0;i<flat.length;i++){
-    if(flat[i]==null) continue;
-    const delta = curFrames - flat[i];
-    if(delta>=0 && delta < LTC_LOOKAHEAD_SECONDS*ltcFps) best=i;
-  }
-  return best;
+// Strict single-step matching: only ever looks at the very next tagged
+// track after wherever we currently are (the one shown orange/"next-up")
+// and checks nothing else. The setlist is always in order, so the track
+// immediately below the current one is always next — there's no scanning
+// ahead, no comparing against the rest of the list, just one check.
+function nextReachedIdx(flat, fromIdx, curFrames){
+  let nextIdx=-1;
+  for(let i=fromIdx+1;i<flat.length;i++){ if(flat[i]!=null){ nextIdx=i; break; } }
+  if(nextIdx===-1) return -1;
+  return (flat[nextIdx] <= curFrames) ? nextIdx : -1;
 }
 
 function applyLtcMatch(candidateIdx, flatCut, autoScroll){
@@ -1502,10 +1492,9 @@ function updateLtcHighlight(){
   if(curFrames==null) return;
 
   const {flat, flatCut} = getFlatTcData();
-  const candidateIdx = findBoundedCurrentIdx(flat, curFrames);
+  const candidateIdx = nextReachedIdx(flat, ltcLastAppliedIdx, curFrames);
 
-  if(candidateIdx<0){ ltcPendingIdx=-1; ltcPendingCount=0; return; } // nothing within reach yet — leave as-is
-  if(candidateIdx===ltcLastAppliedIdx){ ltcPendingIdx=-1; ltcPendingCount=0; return; } // no change
+  if(candidateIdx<0){ ltcPendingIdx=-1; ltcPendingCount=0; return; } // next track not reached yet — leave as-is
 
   // Small noise buffer: require the same match twice in a row before it
   // actually moves the highlight, so a single bad frame decode can't do it.
@@ -1518,19 +1507,43 @@ function updateLtcHighlight(){
   ltcPendingIdx=-1; ltcPendingCount=0;
 }
 
-// Manual "force resync" — for after editing a timecode stamp mid-show, so
-// you don't have to wait out the normal noise-filtering delay. A button
-// click is inherently trusted, so this applies instantly, using the same
-// bounded scan as the live tick handler.
+// Finds, across the WHOLE list, whichever track's own stamp is closest to
+// curFrames without going over it — i.e. the smallest non-negative gap.
+// This is deliberately different from the live tracker's single-step logic:
+// it's for cold-starting the match from scratch (browser reopened mid-show,
+// a stamp corrected after the fact), where we genuinely don't know where we
+// are yet and need to search everywhere. A track whose stamp is still in
+// the future relative to curFrames is never a candidate, no matter how
+// close, so it can't jump ahead of where the show actually is.
+function findClosestReachedIdx(flat, curFrames){
+  let bestIdx=-1, bestDelta=Infinity;
+  for(let i=0;i<flat.length;i++){
+    if(flat[i]==null) continue;
+    const delta = curFrames - flat[i];
+    if(delta>=0 && delta<bestDelta){
+      bestDelta = delta;
+      bestIdx = i;
+    }
+  }
+  return bestIdx;
+}
+
+// Manual "force resync" — scans the entire list fresh rather than stepping
+// from wherever the live tracker last was, so it works correctly even if
+// the sheet was just reopened mid-show or a timecode was edited elsewhere
+// in the running order. A button click is inherently trusted, so this
+// applies instantly rather than waiting out the normal noise-filtering delay.
 function forceLtcResync(){
   if(!ltcLocked || !ltcCurrentTC) return;
   const curFrames = tcToFrames(`${ltcCurrentTC.hours}:${ltcCurrentTC.mins}:${ltcCurrentTC.secs}:${ltcCurrentTC.frames}`, ltcFps);
   if(curFrames==null) return;
   const {flat, flatCut} = getFlatTcData();
-  const candidateIdx = findBoundedCurrentIdx(flat, curFrames);
-  if(candidateIdx<0) return;
+
+  const idx = findClosestReachedIdx(flat, curFrames);
+  if(idx<0) return; // nothing has been reached yet
+
   const autoScrollBox = document.getElementById('ltcAutoScroll');
-  applyLtcMatch(candidateIdx, flatCut, !!(autoScrollBox && autoScrollBox.checked));
+  applyLtcMatch(idx, flatCut, !!(autoScrollBox && autoScrollBox.checked));
   ltcPendingIdx=-1; ltcPendingCount=0;
 }
 
