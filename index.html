@@ -1464,11 +1464,18 @@ function getFlatTcData(){
 // and checks nothing else. The setlist is always in order, so the track
 // immediately below the current one is always next — there's no scanning
 // ahead, no comparing against the rest of the list, just one check.
+// The match also has to be recent — every real gap between consecutive
+// stamps in this show is under 9:59, so a candidate more than 9:59 past
+// its own stamp is treated as not a genuine match (e.g. an unrelated,
+// out-of-range value) rather than accepted no matter how long ago it
+// passed.
+const LTC_NEXT_MAX_AGE_SECONDS = 9*60+59; // 9:59
 function nextReachedIdx(flat, fromIdx, curFrames){
   let nextIdx=-1;
   for(let i=fromIdx+1;i<flat.length;i++){ if(flat[i]!=null){ nextIdx=i; break; } }
   if(nextIdx===-1) return -1;
-  return (flat[nextIdx] <= curFrames) ? nextIdx : -1;
+  const delta = curFrames - flat[nextIdx];
+  return (delta>=0 && delta < LTC_NEXT_MAX_AGE_SECONDS*ltcFps) ? nextIdx : -1;
 }
 
 function applyLtcMatch(candidateIdx, flatCut, autoScroll){
