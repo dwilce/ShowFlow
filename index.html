@@ -1446,23 +1446,21 @@ function getFlatTcData(){
   return {flat, flatCut};
 }
 
-// Strict single-step matching: only ever looks at the very next tagged
-// track after wherever we currently are (the one shown orange/"next-up")
-// and checks nothing else. The setlist is always in order, so the track
-// immediately below the current one is always next — there's no scanning
-// ahead, no comparing against the rest of the list, just one check.
-// The match also has to be recent — every real gap between consecutive
-// stamps in this show is under 9:59, so a candidate more than 9:59 past
-// its own stamp is treated as not a genuine match (e.g. an unrelated,
-// out-of-range value) rather than accepted no matter how long ago it
-// passed.
-const LTC_NEXT_MAX_AGE_SECONDS = 9*60+59; // 9:59
+// Strict single-step matching: only ever looks at the very next EXPLICITLY
+// TIMECODED track after wherever we currently are (the one shown orange/
+// "next-up") and checks nothing else. Songs with no timecode typed in are
+// skipped entirely — they're invisible to this check and never cause a move.
+// The setlist is always in order, so the next tagged track below the
+// current one is always next — there's no scanning ahead, no comparing
+// against the rest of the list, no cutoff on how long it's been reached.
+// The moment the incoming time reaches or passes that track's own stamp,
+// it's a match — regardless of how big the gap to the previous stamp was
+// (long DJ breaks / costume changes between tagged songs are normal here).
 function nextReachedIdx(flat, fromIdx, curFrames){
   let nextIdx=-1;
   for(let i=fromIdx+1;i<flat.length;i++){ if(flat[i]!=null){ nextIdx=i; break; } }
   if(nextIdx===-1) return -1;
-  const delta = curFrames - flat[nextIdx];
-  return (delta>=0 && delta < LTC_NEXT_MAX_AGE_SECONDS*ltcFps) ? nextIdx : -1;
+  return (curFrames >= flat[nextIdx]) ? nextIdx : -1;
 }
 
 function applyLtcMatch(candidateIdx, flatCut, autoScroll){
